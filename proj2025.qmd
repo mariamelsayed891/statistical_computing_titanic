@@ -1,0 +1,549 @@
+---
+title: "Titanic Data Analysis"
+format: html
+editor: visual
+execute:
+  echo: true
+  warning: false
+  message: false
+  freeze: false
+---
+
+**LIBRARIES**
+
+```{r ,message=FALSE , warning=FALSE}
+library(tidyverse)
+library(janitor)
+library(skimr)
+library(ggplot2)
+library(shiny) 
+library(broom)
+```
+
+**1) Import data set (titanic)**
+
+```{r ,message=FALSE , warning=FALSE}
+data1<-read.csv(file.choose(), header = TRUE)
+  
+  titanic <- read.csv(file.choose("titanic.csv"), stringsAsFactors = FALSE)
+```
+
+**2) Cleaning**
+
+**01) Clean column names & Convert variable types (data types)**
+
+```{r, message=FALSE , warning=FALSE}
+library(tidyverse)
+library(janitor)
+library(skimr)
+
+# Clean column names
+titanic <- titanic %>% clean_names()
+
+# Convert variable types
+titanic <- titanic %>%
+  mutate(
+    survived = as.factor(survived),
+    pclass   = as.factor(pclass),
+    sex      = as.factor(sex)
+  )
+str(titanic)
+```
+
+**02) Handle missing values & Fill missing age with median**
+
+```{r}
+# Handle missing values
+# Fill missing age with median
+median_age <- median(titanic$age, na.rm = TRUE)
+titanic$age[is.na(titanic$age)] <- median_age 
+```
+
+**03) Fill missing embarked with mode**
+
+```{r}
+# Fill missing embarked with mode
+mode_emb <- titanic %>%
+  filter(!is.na(embarked)) %>%
+  count(embarked) %>%
+  slice_max(n) %>%
+  pull(embarked)
+
+titanic$embarked[is.na(titanic$embarked)] <- mode_emb
+```
+
+**04) Remove duplicates**
+
+```{r}
+# Remove duplicates
+titanic <- titanic %>% distinct()
+```
+
+**05) Data Summary**
+
+```{r}
+skim(titanic)
+```
+
+**3)** **Exploratory Data Analysis EDA (ggplot)**
+
+**01) Histogram of a single variable (Age)**
+
+```{r ,message=FALSE, warning=FALSE}
+#Histogram of a single variable (Age)
+ggplot(titanic, aes(age)) +
+  geom_histogram(bins = 30) +
+  labs(title = "Age Distribution", x = "Age", y = "Count")
+```
+
+**02) Relationship between two variables (Age vs Fare)**
+
+```{r ,message=FALSE , warning=FALSE}
+#Relationship between two variables (Age vs Fare)
+ggplot(titanic, aes(age, fare, color = survived)) +
+  geom_point(alpha = 0.6) +
+  labs(title = "Age vs Fare by Survival", x = "Age", y = "Fare")
+```
+
+**03) Comparing groups (Survival by Pclass)**
+
+```{r ,message=FALSE , warning=FALSE}
+#Comparing groups (Survival by Pclass)
+
+titanic %>%
+  group_by(pclass, survived) %>%
+  summarise(n = n()) %>%
+  ggplot(aes(pclass, n, fill = survived)) +
+  geom_col(position = "dodge") +
+  labs(title = "Survival by Passenger Class", x = "Pclass", y = "Count")
+
+
+```
+
+**04) Boxplot (Fare by Class)**
+
+```{r ,message=FALSE , warning=FALSE}
+#Boxplot (Fare by Class)
+
+ggplot(titanic, aes(pclass, fare)) +
+  geom_boxplot() +
+  labs(title = "Fare by Passenger Class", x = "Pclass", y = "Fare")
+```
+
+**05) Pie chart for Gender distribution**
+
+```{r ,message=FALSE , warning=FALSE}
+#Pie chart for Gender distribition
+
+ggplot(titanic, aes(x = "", fill = sex)) +
+  geom_bar(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Gender Distribution") +
+  theme_void()
+```
+
+**06) Count plot for Survival by Gender**
+
+```{r ,message=FALSE , warning=FALSE}
+# Count plot for Survival by Gender
+
+ggplot(titanic, aes(sex, fill = survived)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Survival by Gender", x = "Sex", y = "Count")
+```
+
+**07) Heatmap for correlations**
+
+```{r ,message=FALSE , warning=FALSE}
+#Heatmap for correlations 
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+
+# Select numeric columns automatically
+numeric_data <- titanic %>% select(where(is.numeric))
+
+# Compute correlation matrix
+cor_mat <- cor(numeric_data, use = "complete.obs")
+
+# Melt for ggplot
+melted_cor <- melt(cor_mat)
+
+# Plot heatmap
+ggplot(melted_cor, aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = round(value, 2))) +
+  labs(title = "Correlation Heatmap (All Numeric Variables)",
+       x = "",
+       y = "")
+```
+
+**4) Data Manipulation Workflow using (Tidyverse)**
+
+**01) Filtering female passengers in 3rd class**
+
+```{r ,message=FALSE , warning=FALSE}
+# Filtering female passengers in 3rd class
+filtered_titanic <- titanic %>%
+  filter(sex == "female", pclass == 3)
+```
+
+**02) survival rate by sex and class**
+
+```{r ,message=FALSE , warning=FALSE}
+# survival rate by sex and class
+survival_tbl <- titanic %>%
+  group_by(sex, pclass) %>%
+  summarise(total = n(), survived_n = sum(as.numeric(as.character(survived)) == 1)) %>%
+  mutate(survival_rate = survived_n / total)
+
+knitr::kable(survival_tbl)
+```
+
+**03) Top 1o highest fares**
+
+```{r ,message=FALSE , warning=FALSE}
+#Top 1o highest fares
+
+titanic %>%
+  arrange(desc(fare)) %>%
+  select(fare, pclass, survived) %>%
+  slice(1:10)
+```
+
+**04) Create family_size & summarize survival**
+
+```{r ,message=FALSE , warning=FALSE}
+
+library(dplyr)
+
+#  Create family_size column
+titanic <- titanic %>%
+  mutate(family_size = sib_sp + parch + 1)
+
+#  Summarize by family_size
+titanic %>%
+  group_by(family_size) %>%
+  summarise(
+    count = n(),
+    survival_rate = mean(as.numeric(as.character(survived)))
+  )
+```
+
+**5) Statistical Inference**
+
+**01) Chi-square test (Survival × Pclass)**
+
+```{r ,message=FALSE , warning=FALSE}
+#Chi-square test (Survival × Pclass)
+tbl <- table(titanic$pclass, titanic$survived)
+chisq.test(tbl)
+```
+
+**02) t-test: difference in age between survivors and non-survivors**
+
+```{r ,message=FALSE , warning=FALSE}
+#t-test: difference in age between survivors and non-survivors
+
+t.test(age ~ survived, data = titanic)
+
+```
+
+**6)** **Linear regression model (Logistic + interpretation + diagnostics)**
+
+**01) Logistic Regression**
+
+```{r ,message=FALSE , warning=FALSE}
+#Logistic Regression 
+titanic$survived_num <- ifelse(titanic$survived == 1, 1, 0)
+
+glm_fit <- glm(survived_num ~ age + sex + pclass,
+               data = titanic,
+               family = binomial)
+
+summary(glm_fit)
+```
+
+**02)** **interpretation**
+
+```{r ,message=FALSE , warning=FALSE}
+# Interpretation (print human-readable):
+cat("Intercept and coefficients:\n")
+print(tidy_lm %>% select(term, estimate, conf.low, conf.high, p.value))
+```
+
+**03) Deviance Residuals vs Fitted**
+
+```{r ,message=FALSE , warning=FALSE}
+# Deviance residuals
+resid_dev <- residuals(glm_fit, type = "deviance")
+
+# Plot
+p1 <- ggplot(data = data.frame(fitted = fitted(glm_fit), resid = resid_dev), 
+             aes(x = fitted, y = resid)) +
+  geom_point(alpha = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Deviance Residuals vs Fitted",
+       x = "Fitted values",
+       y = "Deviance Residuals")
+
+
+```
+
+**04) Q-Q Plot of Deviance Residuals**
+
+```{r ,message=FALSE , warning=FALSE}
+p2 <- ggplot(data = data.frame(resid = resid_dev), aes(sample = resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  labs(title = "Q-Q Plot of Deviance Residuals")
+```
+
+**05) Standardized Residuals us Fitted**
+
+```{r ,message=FALSE , warning=FALSE}
+cd <- cooks.distance(glm_fit)
+
+p3 <- qplot(seq_along(cd), cd, geom = "point") +
+  geom_hline(yintercept = 4/length(cd), color = "red", linetype = "dashed") +
+  labs(title = "Cook's Distance",
+       x = "Observation",
+       y = "Cook's Distance")
+
+
+```
+
+**06) Cook's distance plot to check influential points**
+
+```{r ,message=FALSE , warning=FALSE}
+resid_std <- rstandard(glm_fit)
+
+p4 <- ggplot(data = data.frame(fitted = fitted(glm_fit), resid = resid_std), 
+             aes(x = fitted, y = resid)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "loess", se = FALSE) +
+  labs(title = "Standardized Residuals vs Fitted",
+       x = "Fitted values",
+       y = "Standardized Residuals")
+
+# Arrange the three ggplots
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+
+```
+
+**7) Dashboard Summarizing Your Findings Using (Shiny)**
+
+```{r ,message=FALSE , warning=FALSE}
+library(shiny)
+library(tidyverse)
+library(broom)
+library(ggplot2)
+install.packages("DT")
+library(DT)
+# ui
+ui <- fluidPage(
+  titlePanel("Titanic Analysis Dashboard"),
+  sidebarLayout(
+    sidebarPanel(
+      checkboxInput("show_model", "Show linear model summary", TRUE),
+      selectInput("filter_sex", "Sex", choices = c("All", levels(titanic$sex)), selected = "All"),
+      selectInput("filter_class", "Pclass", choices = c("All", levels(titanic$pclass)), selected = "All"),
+      sliderInput("age_range", "Age range", min = 0, max = 80, value = c(0,80))
+    ),
+    mainPanel(
+      tabsetPanel(
+        tabPanel("Overview",
+                 fluidRow(
+                   column(6, plotOutput("age_hist")),
+                   column(6, plotOutput("survival_by_class"))
+                 ),
+                 fluidRow(
+                   column(12, tableOutput("summary_table"))
+                 )
+        ),
+        tabPanel("Model",
+                 conditionalPanel(
+                   condition = "input.show_model == true",
+                   verbatimTextOutput("model_summary"),
+                   plotOutput("resid_plot")
+                 )
+        ),
+        tabPanel("Data", DT::dataTableOutput("table"))
+      )
+    )
+  )
+)
+
+# server
+server <- function(input, output, session) {
+
+  # reactive filtered data
+  filtered <- reactive({
+    df <- titanic
+    if (input$filter_sex != "All") df <- df %>% filter(sex == input$filter_sex)
+    if (input$filter_class != "All") df <- df %>% filter(pclass == input$filter_class)
+    df %>% filter(age >= input$age_range[1], age <= input$age_range[2])
+  })
+
+  output$age_hist <- renderPlot({
+    ggplot(filtered(), aes(age)) + geom_histogram(bins = 25) + labs(title = "Age distribution")
+  })
+
+  output$survival_by_class <- renderPlot({
+    filtered() %>%
+      group_by(pclass, survived) %>%
+      summarise(n = n()) %>%
+      ggplot(aes(pclass, n, fill = survived)) +
+      geom_col(position = "dodge") + labs(title = "Survival by Class")
+  })
+
+  output$summary_table <- renderTable({
+    filtered() %>%
+      group_by(sex, pclass) %>%
+      summarise(total = n(), survival_rate = mean(as.numeric(as.character(survived)) == 1)) %>%
+      arrange(desc(survival_rate))
+  })
+
+  output$table <- DT::renderDataTable({
+    filtered()
+  })
+
+  output$model_summary <- renderPrint({
+    df <- filtered() %>% mutate(log_fare = log(fare + 1))
+    fit <- lm(log_fare ~ age + sex + pclass + family_size, data = df)
+    summary(fit)
+  })
+
+  output$resid_plot <- renderPlot({
+    df <- filtered() %>% mutate(log_fare = log(fare + 1))
+    fit <- lm(log_fare ~ age + sex + pclass + family_size, data = df)
+    plot(fit, which = 1) # Residuals vs Fitted
+  })
+
+}
+
+# run app
+shinyApp(ui, server)
+```
+
+**8) Simulate the dataset and Compare**
+
+```{r setup, include=FALSE}
+# Setup: load packages and set seed
+
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+set.seed(1234)
+```
+
+**01) Simulate new log_fare values using fitted model**
+
+```{r  fit-linear-model}
+# Create log_fare if not exists and fit model
+
+if (!exists("lm_fit")) {
+  titanic <- titanic %>% mutate(log_fare = log(fare + 1))
+  lm_fit <- lm(log_fare ~ age + sex + pclass + family_size, data = titanic)
+}
+```
+
+**02) Simulate new log_fare values using fitted model**
+
+```{r simulate-fare}
+X <- model.matrix(lm_fit)
+beta <- coef(lm_fit)
+fitted_values <- as.vector(X %*% beta)
+sigma <- sigma(lm_fit)
+
+n_sim <- nrow(titanic)
+sim_log_fare <- fitted_values + rnorm(n_sim, mean = 0, sd = sigma)
+
+# Create simulated dataset
+simulated <- titanic %>%
+  mutate(
+    sim_log_fare = sim_log_fare,
+    sim_fare = exp(sim_log_fare) - 1
+  )
+```
+
+**03) Compare summary statistics: real vs simulated fare**
+
+```{r summarize-fare}
+real_summary <- titanic %>% summarise(
+  mean_fare = mean(fare, na.rm = TRUE),
+  median_fare = median(fare, na.rm = TRUE),
+  sd_fare = sd(fare, na.rm = TRUE)
+)
+
+sim_summary <- simulated %>% summarise(
+  mean_fare = mean(sim_fare, na.rm = TRUE),
+  median_fare = median(sim_fare, na.rm = TRUE),
+  sd_fare = sd(sim_fare, na.rm = TRUE)
+)
+
+real_summary
+sim_summary
+
+```
+
+**04) Visual comparison: histograms**
+
+```{r plot-fare}
+
+p_real <- ggplot(titanic, aes(x = fare)) + 
+  geom_histogram(bins = 50, fill="blue", alpha=0.5) + 
+  labs(title = "Real Fare Distribution")
+
+p_sim  <- ggplot(simulated, aes(x = sim_fare)) + 
+  geom_histogram(bins = 50, fill="red", alpha=0.5) + 
+  labs(title = "Simulated Fare Distribution")
+
+grid.arrange(p_real, p_sim, ncol = 2)
+
+```
+
+**05) Statistical comparison: Kolmogorov-Smirnov** **test**
+
+```{r ks-test}
+
+ks_res <- ks.test(titanic$fare, simulated$sim_fare)
+ks_res
+
+```
+
+**06) Fit Logistic Regression Model**
+
+```{r fit-logistic-model}
+titanic$survived_num <- ifelse(
+  as.numeric(as.character(titanic$survived)) == 1, 1, 0
+)
+
+glm_fit <- glm(
+  survived_num ~ age + sex + pclass + family_size,
+  data = titanic,
+  family = binomial
+)
+
+```
+
+**07) Predict Survival Probabilities**
+
+```{r predict-survival}
+prob <- predict(glm_fit, type = "response")
+```
+
+**08) Simulate Survival Outcomes**
+
+```{r simulate-survival}
+sim_survived <- rbinom(length(prob), size = 1, prob = prob)
+```
+
+**09) Compare Observed vs Simulated Survival**
+
+```{r compare-survival}
+data.frame(
+  observed  = mean(titanic$survived_num),
+  simulated = mean(sim_survived)
+)
+```
